@@ -16,9 +16,11 @@ include = ["src/", "license"]
 serializable = ["serde"]
 
 [dependencies]
+anyhow = "1.0.66"
 markdown = "1.0.0-alpha.3"
 serde = { version = "1", optional = true }
 swc_core = { version = "0.40.16", features = [
+  "base_node",
   "ecma_ast",
   "ecma_visit",
   "ecma_codegen",

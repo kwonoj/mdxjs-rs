@@ -6,19 +6,37 @@ use crate::swc_utils::{
     create_span, prefix_error_with_point, DropContext, RewritePrefixContext, RewriteStopsContext,
 };
 use markdown::{mdast::Stop, Location, MdxExpressionKind, MdxSignal};
+use std::fmt::Error;
 use std::rc::Rc;
-use swc_core::common::{
-    comments::{Comment, Comments, SingleThreadedComments, SingleThreadedCommentsMap},
-    source_map::Pos,
-    sync::Lrc,
-    BytePos, FileName, FilePathMapping, SourceFile, SourceMap, Span, Spanned,
-};
-use swc_core::ecma::ast::{EsVersion, Expr, Module, PropOrSpread};
+use std::sync::Arc;
+use swc_core::base::config::SourceMapsConfig;
+use swc_core::base::TransformOutput;
+use swc_core::common::GLOBALS;
+use swc_core::ecma::ast::{EsVersion, Expr, Module, Program, PropOrSpread};
 use swc_core::ecma::codegen::{text_writer::JsWriter, Emitter};
 use swc_core::ecma::parser::{
     error::Error as SwcError, parse_file_as_expr, parse_file_as_module, EsConfig, Syntax,
 };
 use swc_core::ecma::visit::VisitMutWith;
+use swc_core::{
+    base::Compiler,
+    common::{
+        comments::{Comment, Comments, SingleThreadedComments, SingleThreadedCommentsMap},
+        source_map::Pos,
+        sync::{Lazy, Lrc},
+        BytePos, FileName, FilePathMapping, SourceFile, SourceMap, Span, Spanned,
+    },
+};
+
+static COMPILER: Lazy<Arc<Compiler>> = Lazy::new(|| {
+    let cm = Arc::new(SourceMap::new(FilePathMapping::empty()));
+
+    Arc::new(Compiler::new(cm))
+});
+
+fn get_compiler() -> Arc<Compiler> {
+    COMPILER.clone()
+}
 
 /// Lex ESM in MDX with SWC.
 pub fn parse_esm(value: &str) -> MdxSignal {
@@ -203,7 +221,10 @@ pub fn parse_expression_to_tree(
 }
 
 /// Serialize an SWC module.
-pub fn serialize(module: &mut Module, comments: Option<&Vec<Comment>>) -> String {
+pub fn serialize(
+    mut module: Module,
+    comments: Option<&Vec<Comment>>,
+) -> Result<TransformOutput, anyhow::Error> {
     let single_threaded_comments = SingleThreadedComments::default();
     if let Some(comments) = comments {
         for c in comments {
@@ -211,22 +232,27 @@ pub fn serialize(module: &mut Module, comments: Option<&Vec<Comment>>) -> String
         }
     }
     module.visit_mut_with(&mut DropContext {});
-    let mut buf = vec![];
-    let cm = Lrc::new(SourceMap::new(FilePathMapping::empty()));
-    {
-        let mut emitter = Emitter {
-            cfg: swc_core::ecma::codegen::Config {
-                ..Default::default()
-            },
-            cm: cm.clone(),
-            comments: Some(&single_threaded_comments),
-            wr: JsWriter::new(cm, "\n", &mut buf, None),
-        };
 
-        emitter.emit_module(module).unwrap();
-    }
+    let c = get_compiler();
+    let p = Program::Module(module);
 
-    String::from_utf8_lossy(&buf).into()
+    // TODO: Currently, there aren't correct source maps for the output.
+    GLOBALS.set(&Default::default(), || {
+        c.print(
+            &p,
+            None,
+            None,
+            true,
+            EsVersion::Es2015,
+            SourceMapsConfig::Bool(true),
+            &Default::default(),
+            None,
+            false,
+            Some(&single_threaded_comments),
+            true,
+            false,
+        )
+    })
 }
 
 // To do: remove this attribute, use it somewhere.

@@ -1024,7 +1024,11 @@ mod tests {
         let mut program = hast_util_to_swc(&hast, filepath, Some(&location))?;
         mdx_plugin_recma_document(&mut program, &DocumentOptions::default(), Some(&location))?;
         mdx_plugin_recma_jsx_rewrite(&mut program, options, Some(&location));
-        Ok(serialize(&mut program.module, Some(&program.comments)))
+        let ret = serialize(program.module, Some(&program.comments));
+        match ret {
+            Ok(output) => Ok(output.code),
+            Err(err) => Err(format!("{:?}", err)),
+        }
     }
 
     #[test]
