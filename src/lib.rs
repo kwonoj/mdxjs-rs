@@ -27,16 +27,19 @@ use crate::{
     mdast_util_to_hast::mdast_util_to_hast,
     mdx_plugin_recma_document::{mdx_plugin_recma_document, Options as DocumentOptions},
     mdx_plugin_recma_jsx_rewrite::{mdx_plugin_recma_jsx_rewrite, Options as RewriteOptions},
-    swc::{parse_esm, parse_expression, serialize},
+    swc::{parse_esm, parse_expression},
     swc_util_build_jsx::{swc_util_build_jsx, Options as BuildOptions},
 };
-use markdown::{to_mdast, Constructs, Location, ParseOptions};
+use hast_util_to_swc::Program;
+use markdown::{to_mdast, Constructs, ParseOptions};
 
 pub use crate::configuration::{MdxConstructs, MdxParseOptions};
 pub use crate::mdx_plugin_recma_document::JsxRuntime;
 
 pub use configuration::Options;
 pub use hast::Node;
+pub use markdown::Location;
+pub use swc::serialize;
 
 pub fn parse_hast_string(value: &str, options: &Options) -> Result<Node, String> {
     let parse_options = ParseOptions {
@@ -88,27 +91,11 @@ pub fn parse_hast_string(value: &str, options: &Options) -> Result<Node, String>
     Ok(hast)
 }
 
-/// Turn MDX into JavaScript.
-///
-/// ## Examples
-///
-/// ```
-/// use mdxjs::compile;
-/// # fn main() -> Result<(), String> {
-///
-/// assert_eq!(compile("# Hi!", &Default::default())?, "import { jsx as _jsx } from \"react/jsx-runtime\";\nfunction _createMdxContent(props) {\n    const _components = Object.assign({\n        h1: \"h1\"\n    }, props.components);\n    return _jsx(_components.h1, {\n        children: \"Hi!\"\n    });\n}\nfunction MDXContent(props = {}) {\n    const { wrapper: MDXLayout  } = props.components || {};\n    return MDXLayout ? _jsx(MDXLayout, Object.assign({}, props, {\n        children: _jsx(_createMdxContent, props)\n    })) : _createMdxContent(props);\n}\nexport default MDXContent;\n");
-/// # Ok(())
-/// # }
-/// ```
-///
-/// ## Errors
-///
-/// This project errors for many different reasons, such as syntax errors in
-/// the MDX format or misconfiguration.
-pub fn compile(value: &str, options: &Options) -> Result<String, String> {
-    let hast = parse_hast_string(value, options)?;
-    let location = Location::new(value.as_bytes());
-
+pub fn interop_swc_ast(
+    hast: &Node,
+    location: &Location,
+    options: &Options,
+) -> Result<Program, String> {
     let document_options = DocumentOptions {
         pragma: options.pragma.clone(),
         pragma_frag: options.pragma_frag.clone(),
@@ -131,6 +118,31 @@ pub fn compile(value: &str, options: &Options) -> Result<String, String> {
     if !options.jsx {
         swc_util_build_jsx(&mut program, &build_options, Some(&location))?;
     }
+
+    Ok(program)
+}
+
+/// Turn MDX into JavaScript.
+///
+/// ## Examples
+///
+/// ```
+/// use mdxjs::compile;
+/// # fn main() -> Result<(), String> {
+///
+/// assert_eq!(compile("# Hi!", &Default::default())?, "import { jsx as _jsx } from \"react/jsx-runtime\";\nfunction _createMdxContent(props) {\n    const _components = Object.assign({\n        h1: \"h1\"\n    }, props.components);\n    return _jsx(_components.h1, {\n        children: \"Hi!\"\n    });\n}\nfunction MDXContent(props = {}) {\n    const { wrapper: MDXLayout  } = props.components || {};\n    return MDXLayout ? _jsx(MDXLayout, Object.assign({}, props, {\n        children: _jsx(_createMdxContent, props)\n    })) : _createMdxContent(props);\n}\nexport default MDXContent;\n");
+/// # Ok(())
+/// # }
+/// ```
+///
+/// ## Errors
+///
+/// This project errors for many different reasons, such as syntax errors in
+/// the MDX format or misconfiguration.
+pub fn compile(value: &str, options: &Options) -> Result<String, String> {
+    let hast = parse_hast_string(value, options)?;
+    let location = Location::new(value.as_bytes());
+    let mut program = interop_swc_ast(&hast, &location, options)?;
 
     Ok(serialize(&mut program.module, Some(&program.comments)))
 }
