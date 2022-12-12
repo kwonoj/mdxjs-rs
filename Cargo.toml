@@ -13,10 +13,13 @@ categories = ["compilers", "text-processing"]
 include = ["src/", "license"]
 
 [features]
+default = ["native-tls"]
+native-tls = ["markdown/native-tls"]
+rustls-tls = ["markdown/rustls-tls"]
 serializable = ["serde"]
 
 [dependencies]
-markdown = "1.0.0-alpha.4"
+markdown = { git = "https://github.com/kwonoj/markdown-rs.git", rev = "69b07b09249b93ed9a9cdc4a9584ba14ec0d201f", default-features = false }
 serde = { version = "1", optional = true }
 swc_core = { version = "0.44.0", features = [
   "ecma_ast",
